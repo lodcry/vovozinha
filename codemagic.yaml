@@ -24,30 +24,22 @@ workflows:
         script: |
           npm install
 
-      - name: Inicializar React Native Android
+      - name: Criar estrutura de diretórios
         script: |
-          # Criar estrutura de diretórios
           mkdir -p android/app/src/main/java/com/vovozinha/{accessibility,app}
-          mkdir -p android/app/src/main/res/{xml,values,drawable,mipmap-hdpi}
+          mkdir -p android/app/src/main/res/{xml,values}
           mkdir -p android/gradle/wrapper
 
       - name: Criar settings.gradle
         script: |
           cat > android/settings.gradle << 'SETTINGS'
-          pluginManagement {
-              includeBuild("../node_modules/@react-native/gradle-plugin")
-          }
-          
-          plugins {
-              id("com.facebook.react.settings")
-          }
-          
-          extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
-              ex.autolinkLibrariesFromCommand()
-          }
-          
           rootProject.name = 'Vovozinha'
+          
+          apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
+          applyNativeModulesSettingsGradle(settings)
+          
           include ':app'
+          includeBuild('../node_modules/@react-native/gradle-plugin')
           SETTINGS
 
       - name: Criar build.gradle raiz
@@ -72,7 +64,13 @@ workflows:
               }
           }
           
-          apply plugin: "com.facebook.react.rootproject"
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url 'https://www.jitpack.io' }
+              }
+          }
           ROOTGRADLE
 
       - name: Criar app/build.gradle
@@ -83,7 +81,7 @@ workflows:
           apply plugin: "com.facebook.react"
           
           react {
-              // autolinking
+              // configuração do React Native
           }
           
           android {
@@ -102,12 +100,6 @@ workflows:
               }
               
               signingConfigs {
-                  debug {
-                      storeFile file('debug.keystore')
-                      storePassword 'android'
-                      keyAlias 'androiddebugkey'
-                      keyPassword 'android'
-                  }
                   release {
                       storeFile file('debug.keystore')
                       storePassword 'android'
@@ -117,13 +109,9 @@ workflows:
               }
               
               buildTypes {
-                  debug {
-                      signingConfig signingConfigs.debug
-                  }
                   release {
                       signingConfig signingConfigs.release
                       minifyEnabled false
-                      proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
                   }
               }
               
@@ -152,31 +140,24 @@ workflows:
           org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
           android.useAndroidX=true
           android.enableJetifier=true
-          reactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64
+          reactNativeArchitectures=armeabi-v7a,arm64-v8a
           newArchEnabled=false
           hermesEnabled=true
           GRADLEPROPS
 
-      - name: Criar Gradle Wrapper
+      - name: Criar local.properties
         script: |
-          cat > android/gradle/wrapper/gradle-wrapper.properties << 'WRAPPERPROPS'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-all.zip
-          networkTimeout=10000
-          validateDistributionUrl=true
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          WRAPPERPROPS
-          
-          # Baixar gradlew
-          curl -L https://raw.githubusercontent.com/react-native-community/template/0.73-stable/template/android/gradlew -o android/gradlew
-          chmod +x android/gradlew
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
 
-      - name: Build APK Release
+      - name: Gerar Gradle Wrapper
         script: |
           cd android
-          ./gradlew assembleRelease --no-daemon
+          gradle wrapper --gradle-version 8.5
+
+      - name: Build APK Profile
+        script: |
+          cd android
+          ./gradlew assembleRelease --no-daemon --warning-mode=all
 
     artifacts:
       - android/app/build/outputs/apk/release/app-release.apk
