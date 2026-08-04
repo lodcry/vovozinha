@@ -1,0 +1,56 @@
+workflows:
+  vovozinha-apk:
+    name: Vovozinha APK Profile
+    max_build_duration: 60
+
+    environment:
+      node: 18.17.0
+      java: 17
+      vars:
+        LANG: "en_US.UTF-8"
+        LC_ALL: "en_US.UTF-8"
+        JVM_ARGS: "-Xmx12g"
+        ANDROID_SDK_ROOT: "/usr/local/share/android-sdk"
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+
+    scripts:
+      - name: Instalar dependências Node
+        script: |
+          npm install
+
+      - name: Criar estrutura Android
+        script: |
+          mkdir -p android/app/src/main/java/com/vovozinha/{accessibility,app}
+          mkdir -p android/app/src/main/res/{xml,values}
+
+      - name: Configurar Gradle
+        script: |
+          cd android
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          
+          # Gradle wrapper
+          if [ ! -f "gradlew" ]; then
+            gradle wrapper --gradle-version 8.5
+          fi
+
+      - name: Build APK Profile
+        script: |
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+    artifacts:
+      - android/app/build/outputs/apk/release/app-release.apk
+
+    publishing:
+      email:
+        recipients:
+          - loggergray@gmail.com
+        notify:
+          success: true
+          failure: true
