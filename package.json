@@ -1,0 +1,22 @@
+{
+  "name": "vovozinha",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "android": "react-native run-android",
+    "start": "react-native start"
+  },
+  "dependencies": {
+    "react": "18.2.0",
+    "react-native": "0.73.0",
+    "@react-native-voice/voice": "^3.2.4",
+    "react-native-tts": "^4.1.0",
+    "react-native-webview": "^13.6.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@types/react": "^18.2.0",
+    "@types/react-native": "^0.73.0",
+    "typescript": "^5.0.4"
+  }
+}
