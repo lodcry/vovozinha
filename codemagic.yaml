@@ -9,8 +9,8 @@ workflows:
       vars:
         LANG: "en_US.UTF-8"
         LC_ALL: "en_US.UTF-8"
-        JVM_ARGS: "-Xmx12g"
         ANDROID_SDK_ROOT: "/usr/local/share/android-sdk"
+        GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
 
     triggering:
       events:
@@ -24,140 +24,42 @@ workflows:
         script: |
           npm install
 
-      - name: Criar estrutura de diretórios
-        script: |
-          mkdir -p android/app/src/main/java/com/vovozinha/{accessibility,app}
-          mkdir -p android/app/src/main/res/{xml,values}
-          mkdir -p android/gradle/wrapper
-
-      - name: Criar settings.gradle
-        script: |
-          cat > android/settings.gradle << 'SETTINGS'
-          rootProject.name = 'Vovozinha'
-          
-          apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
-          applyNativeModulesSettingsGradle(settings)
-          
-          include ':app'
-          includeBuild('../node_modules/@react-native/gradle-plugin')
-          SETTINGS
-
-      - name: Criar build.gradle raiz
-        script: |
-          cat > android/build.gradle << 'ROOTGRADLE'
-          buildscript {
-              ext {
-                  buildToolsVersion = "34.0.0"
-                  minSdkVersion = 24
-                  compileSdkVersion = 34
-                  targetSdkVersion = 34
-                  ndkVersion = "25.1.8937393"
-                  kotlinVersion = "1.9.22"
-              }
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath("com.android.tools.build:gradle:8.2.1")
-                  classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
-              }
-          }
-          
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-                  maven { url 'https://www.jitpack.io' }
-              }
-          }
-          ROOTGRADLE
-
-      - name: Criar app/build.gradle
-        script: |
-          cat > android/app/build.gradle << 'APPGRADLE'
-          apply plugin: "com.android.application"
-          apply plugin: "org.jetbrains.kotlin.android"
-          apply plugin: "com.facebook.react"
-          
-          react {
-              // configuração do React Native
-          }
-          
-          android {
-              ndkVersion rootProject.ext.ndkVersion
-              buildToolsVersion rootProject.ext.buildToolsVersion
-              compileSdk rootProject.ext.compileSdkVersion
-          
-              namespace "com.vovozinha.app"
-              
-              defaultConfig {
-                  applicationId "com.vovozinha.app"
-                  minSdkVersion rootProject.ext.minSdkVersion
-                  targetSdkVersion rootProject.ext.targetSdkVersion
-                  versionCode 1
-                  versionName "1.0"
-              }
-              
-              signingConfigs {
-                  release {
-                      storeFile file('debug.keystore')
-                      storePassword 'android'
-                      keyAlias 'androiddebugkey'
-                      keyPassword 'android'
-                  }
-              }
-              
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                      minifyEnabled false
-                  }
-              }
-              
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-              
-              kotlinOptions {
-                  jvmTarget = '17'
-              }
-          }
-          
-          dependencies {
-              implementation("com.facebook.react:react-android")
-              implementation("com.facebook.react:hermes-android")
-          }
-          
-          apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
-          applyNativeModulesAppBuildGradle(project)
-          APPGRADLE
-
-      - name: Criar gradle.properties
-        script: |
-          cat > android/gradle.properties << 'GRADLEPROPS'
-          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
-          android.useAndroidX=true
-          android.enableJetifier=true
-          reactNativeArchitectures=armeabi-v7a,arm64-v8a
-          newArchEnabled=false
-          hermesEnabled=true
-          GRADLEPROPS
-
       - name: Criar local.properties
         script: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
 
-      - name: Gerar Gradle Wrapper
+      - name: Baixar gradlew e wrapper jar
         script: |
           cd android
-          gradle wrapper --gradle-version 8.5
+          mkdir -p gradle/wrapper
+          curl -fsSL \
+            "https://github.com/gradle/gradle/raw/v8.6.0/gradle/wrapper/gradle-wrapper.jar" \
+            -o gradle/wrapper/gradle-wrapper.jar
+          curl -fsSL \
+            "https://raw.githubusercontent.com/gradle/gradle/v8.6.0/gradlew" \
+            -o gradlew
+          chmod +x gradlew
 
-      - name: Build APK Profile
+      - name: Criar debug.keystore
+        script: |
+          keytool -genkey -v \
+            -keystore android/app/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build APK
         script: |
           cd android
-          ./gradlew assembleRelease --no-daemon --warning-mode=all
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            --warning-mode=all \
+            -Dorg.gradle.java.home=$JAVA_HOME
 
     artifacts:
       - android/app/build/outputs/apk/release/app-release.apk
