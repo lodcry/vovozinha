@@ -9,8 +9,8 @@ workflows:
       vars:
         LANG: "en_US.UTF-8"
         LC_ALL: "en_US.UTF-8"
-        JVM_ARGS: "-Xmx12g"
         ANDROID_SDK_ROOT: "/usr/local/share/android-sdk"
+        GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
 
     triggering:
       events:
@@ -26,25 +26,31 @@ workflows:
 
       - name: Criar estrutura de diretórios
         script: |
-          mkdir -p android/app/src/main/java/com/vovozinha/{accessibility,app}
-          mkdir -p android/app/src/main/res/{xml,values}
+          mkdir -p android/app/src/main/java/com/vovozinha/accessibility
+          mkdir -p android/app/src/main/java/com/vovozinha/app
+          mkdir -p android/app/src/main/res/xml
+          mkdir -p android/app/src/main/res/values
           mkdir -p android/gradle/wrapper
 
       - name: Criar settings.gradle
         script: |
-          cat > android/settings.gradle << 'SETTINGS'
-          rootProject.name = 'Vovozinha'
-          
-          apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
-          applyNativeModulesSettingsGradle(settings)
-          
-          include ':app'
-          includeBuild('../node_modules/@react-native/gradle-plugin')
-          SETTINGS
+          cat > android/settings.gradle << 'EOF'
+          pluginManagement {
+              includeBuild("../node_modules/@react-native/gradle-plugin")
+          }
+          plugins {
+              id("com.facebook.react.settings")
+          }
+          extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+              ex.autolinkLibrariesFromCommand()
+          }
+          rootProject.name = "vovozinha"
+          include(":app")
+          EOF
 
       - name: Criar build.gradle raiz
         script: |
-          cat > android/build.gradle << 'ROOTGRADLE'
+          cat > android/build.gradle << 'EOF'
           buildscript {
               ext {
                   buildToolsVersion = "34.0.0"
@@ -60,45 +66,38 @@ workflows:
               }
               dependencies {
                   classpath("com.android.tools.build:gradle:8.2.1")
-                  classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
+                  classpath("com.facebook.react:react-native-gradle-plugin")
+                  classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22")
               }
           }
-          
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-                  maven { url 'https://www.jitpack.io' }
-              }
-          }
-          ROOTGRADLE
+          apply plugin: "com.facebook.react.rootproject"
+          EOF
 
       - name: Criar app/build.gradle
         script: |
-          cat > android/app/build.gradle << 'APPGRADLE'
+          cat > android/app/build.gradle << 'EOF'
           apply plugin: "com.android.application"
-          apply plugin: "org.jetbrains.kotlin.android"
           apply plugin: "com.facebook.react"
-          
+          apply plugin: "org.jetbrains.kotlin.android"
+
           react {
-              // configuração do React Native
+              autolinkLibrariesWithApp()
           }
-          
+
           android {
               ndkVersion rootProject.ext.ndkVersion
               buildToolsVersion rootProject.ext.buildToolsVersion
               compileSdk rootProject.ext.compileSdkVersion
-          
               namespace "com.vovozinha.app"
-              
+
               defaultConfig {
                   applicationId "com.vovozinha.app"
-                  minSdkVersion rootProject.ext.minSdkVersion
-                  targetSdkVersion rootProject.ext.targetSdkVersion
+                  minSdk rootProject.ext.minSdkVersion
+                  targetSdk rootProject.ext.targetSdkVersion
                   versionCode 1
                   versionName "1.0"
               }
-              
+
               signingConfigs {
                   release {
                       storeFile file('debug.keystore')
@@ -107,57 +106,84 @@ workflows:
                       keyPassword 'android'
                   }
               }
-              
+
               buildTypes {
                   release {
                       signingConfig signingConfigs.release
                       minifyEnabled false
                   }
               }
-              
+
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
               }
-              
+
               kotlinOptions {
-                  jvmTarget = '17'
+                  jvmTarget = "17"
               }
           }
-          
+
           dependencies {
               implementation("com.facebook.react:react-android")
               implementation("com.facebook.react:hermes-android")
+              implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
           }
-          
-          apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
-          applyNativeModulesAppBuildGradle(project)
-          APPGRADLE
+          EOF
 
       - name: Criar gradle.properties
         script: |
-          cat > android/gradle.properties << 'GRADLEPROPS'
-          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
+          cat > android/gradle.properties << 'EOF'
+          org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
           android.useAndroidX=true
           android.enableJetifier=true
-          reactNativeArchitectures=armeabi-v7a,arm64-v8a
+          reactNativeArchitectures=arm64-v8a
           newArchEnabled=false
           hermesEnabled=true
-          GRADLEPROPS
+          EOF
+
+      - name: Criar gradle-wrapper.properties
+        script: |
+          cat > android/gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.6-all.zip
+          networkTimeout=10000
+          validateDistributionUrl=true
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+
+      - name: Baixar gradlew
+        script: |
+          cd android
+          curl -fsSL https://raw.githubusercontent.com/gradle/gradle/v8.6.0/gradlew -o gradlew
+          chmod +x gradlew
 
       - name: Criar local.properties
         script: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
 
-      - name: Gerar Gradle Wrapper
+      - name: Criar debug.keystore
         script: |
-          cd android
-          gradle wrapper --gradle-version 8.5
+          keytool -genkey -v \
+            -keystore android/app/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
 
-      - name: Build APK Profile
+      - name: Build APK
         script: |
           cd android
-          ./gradlew assembleRelease --no-daemon --warning-mode=all
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            --warning-mode=all \
+            -Dorg.gradle.java.home=$JAVA_HOME
 
     artifacts:
       - android/app/build/outputs/apk/release/app-release.apk
